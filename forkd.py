@@ -9,9 +9,11 @@ import time
 
 # Signals trapped and their single-byte identifier when sent through pipe.
 SIGNAL_IDS = {
-    'SIGCHLD': 'c',
-    'SIGINT': 'i',
-    'SIGTERM': 't',
+    'SIGCHLD': 'C',
+    'SIGINT':  'I',
+    'SIGUSR1': '1',
+    'SIGUSR2': '2',
+    'SIGTERM': 'T',
 }
 SIGNAL_IDS_REV = dict((v, k) for (k, v) in SIGNAL_IDS.iteritems())
 
@@ -61,7 +63,7 @@ class Forkd(object):
             self._signal(name)
 
     def _spawn_workers(self):
-        for i in range(self.num_workers - len(self._workers)):
+        for i in range(max(self.num_workers - len(self._workers), 0)):
             pid = self._spawn_worker()
             self._workers[pid] = {}
             self._log.info('[%s] start worker %s', os.getpid(), pid)
@@ -114,6 +116,16 @@ class Forkd(object):
         """
         self._log.debug('[%s] SIGTERM', os.getpid())
         self.shutdown()
+
+    def _SIGUSR1(self):
+        self.num_workers += 1
+        self._log.info('[%s] adding worker, num_workers=%d', os.getpid(), self.num_workers)
+        self._spawn_workers()
+
+    def _SIGUSR2(self):
+        self.num_workers -= 1
+        self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
+        self._spawn_workers()
 
 
 def main():
