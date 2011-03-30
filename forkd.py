@@ -150,6 +150,8 @@ class Forkd(object):
     def _remove_worker(self):
         """Remove a worker process.
         """
+        if self.num_workers == 0:
+            return
         self.num_workers -= 1
         self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
         self._spawn_workers()
