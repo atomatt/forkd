@@ -60,9 +60,23 @@ class Forkd(object):
         self._status = 'shutdown'
         # Set num_workers to 0 to avoid spawning any more children.
         self.num_workers = 0
-        # Sent QUIT to all workers.
-        for pid, worker in self._workers.iteritems():
-            os.write(worker['pipe'][1], WORKER_QUIT)
+        # Shutdown workers.
+        self._shutdown_workers()
+
+    def _shutdown_workers(self):
+        """Safely shutdown all workers.
+        """
+        for pid in self._workers:
+            self._shutdown_worker(pid)
+
+    def _shutdown_worker(self, pid):
+        """Safely shutdown the worker with given pid.
+        """
+        worker = self._workers[pid]
+        if worker['status'] != 'running':
+            return
+        worker['status'] = 'shutdown'
+        os.write(worker['pipe'][1], WORKER_QUIT)
 
     def _loop(self):
         """Loop, handling signals, until no workers exist.
@@ -92,7 +106,7 @@ class Forkd(object):
         """
         for i in range(max(self.num_workers - len(self._workers), 0)):
             pid, pipe = self._spawn_worker()
-            self._workers[pid] = {'pipe': pipe}
+            self._workers[pid] = {'pipe': pipe, 'status': 'running'}
             self._log.info('[%s] started worker %s', os.getpid(), pid)
 
     def _spawn_worker(self):
@@ -154,6 +168,10 @@ class Forkd(object):
             return
         self.num_workers -= 1
         self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
+        for pid, worker in self._workers.iteritems():
+            if worker['status'] == 'running':
+                self._shutdown_worker(pid)
+                break
 
     def _signal(self, signame):
         """Install signal handler that routes the signal event to the pipe.
