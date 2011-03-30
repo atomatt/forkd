@@ -106,6 +106,9 @@ class Forkd(object):
                 worker.next()
             except StopIteration:
                 break
+            except Exception, e:
+                self._log.exception('[%s] exception in worker', pid)
+                sys.exit(-1)
         self._log.debug('[%s] worker ending', pid)
         sys.exit(0)
 
