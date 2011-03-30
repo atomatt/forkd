@@ -1,4 +1,5 @@
 import errno
+import fcntl
 import logging
 import os
 import select
@@ -16,6 +17,10 @@ SIGNAL_IDS = {
     'SIGTERM': 'T',
 }
 SIGNAL_IDS_REV = dict((v, k) for (k, v) in SIGNAL_IDS.iteritems())
+
+
+# Worker messages.
+WORKER_QUIT = 'Q'
 
 
 class Forkd(object):
@@ -37,11 +42,16 @@ class Forkd(object):
         self._status = 'ended'
 
     def shutdown(self):
+        # Ignore if already shutting down.
         if self._status == 'shutdown':
             return
         self._log.info('[%s] shutting down', os.getpid())
         self._status = 'shutdown'
+        # Set num_workers to 0 to avoid spawning any more children.
         self.num_workers = 0
+        # Sent QUIT to all workers.
+        for pid, worker in self._workers.iteritems():
+            os.write(worker['pipe'][1], WORKER_QUIT)
 
     def loop(self):
         while self._workers:
@@ -64,20 +74,34 @@ class Forkd(object):
 
     def _spawn_workers(self):
         for i in range(max(self.num_workers - len(self._workers), 0)):
-            pid = self._spawn_worker()
-            self._workers[pid] = {}
+            pid, pipe = self._spawn_worker()
+            self._workers[pid] = {'pipe': pipe}
             self._log.info('[%s] start worker %s', os.getpid(), pid)
 
     def _spawn_worker(self):
 
+        worker_pipe = os.pipe()
+
         pid = os.fork()
         if pid:
-            return pid
+            return pid, worker_pipe
+
+        fcntl.fcntl(worker_pipe[0], fcntl.F_SETFL, fcntl.fcntl(worker_pipe[0], fcntl.F_GETFL) | os.O_NONBLOCK)
 
         pid = os.getpid()
         self._log.debug('[%s] worker running', pid)
         worker = self.worker_func()
         while True:
+            # Read byte from worker pipe, if available.
+            try:
+                ch = os.read(worker_pipe[0], 1)
+                if ch == WORKER_QUIT:
+                    self._log.debug('[%s] received QUIT', pid)
+                    break
+            except OSError, e:
+                if e.errno != errno.EAGAIN:
+                    raise
+            # Run worker.
             try:
                 worker.next()
             except StopIteration:
@@ -102,7 +126,9 @@ class Forkd(object):
             if not pid:
                 break
             self._log.info('[%s] worker %s ended with status: %s', os.getpid(), pid, status)
-            del self._workers[pid]
+            worker = self._workers.pop(pid)
+            os.close(worker['pipe'][0])
+            os.close(worker['pipe'][1])
         self._spawn_workers()
 
     def _SIGINT(self):
