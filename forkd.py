@@ -154,7 +154,6 @@ class Forkd(object):
             return
         self.num_workers -= 1
         self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
-        self._spawn_workers()
 
     def _signal(self, signame):
         """Install signal handler that routes the signal event to the pipe.
