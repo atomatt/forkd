@@ -24,7 +24,7 @@ class Forkd(object):
         self.worker_func = worker_func
         self.num_workers = num_workers
         self._status = None
-        self._pipe = None
+        self._signal_pipe = None
         self._workers = {}
         self._log = logging.getLogger('forkd')
 
@@ -46,7 +46,7 @@ class Forkd(object):
     def loop(self):
         while self._workers:
             try:
-                signal_id = os.read(self._pipe[0], 1)
+                signal_id = os.read(self._signal_pipe[0], 1)
                 if not signal_id:
                     break
                 # Call signal handler.
@@ -58,7 +58,7 @@ class Forkd(object):
                     raise
 
     def setup(self):
-        self._pipe = os.pipe()
+        self._signal_pipe = os.pipe()
         for name in SIGNAL_IDS:
             self._signal(name)
 
@@ -90,7 +90,7 @@ class Forkd(object):
         """
         signal_id = SIGNAL_IDS[signame]
         def handler(signo, frame):
-            os.write(self._pipe[1], signal_id)
+            os.write(self._signal_pipe[1], signal_id)
         signal.signal(getattr(signal, signame), handler)
 
     def _SIGCHLD(self):
