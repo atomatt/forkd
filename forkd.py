@@ -128,6 +128,7 @@ class Forkd(object):
             pid, status = os.waitpid(-1, os.WNOHANG)
             if not pid:
                 break
+            status = status >> 8
             self._log.info('[%s] worker %s ended with status: %s', os.getpid(), pid, status)
             worker = self._workers.pop(pid)
             os.close(worker['pipe'][0])
