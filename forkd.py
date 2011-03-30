@@ -1,3 +1,8 @@
+"""
+Pre-forking process manager.
+"""
+
+
 import errno
 import fcntl
 import logging
@@ -24,6 +29,8 @@ WORKER_QUIT = 'Q'
 
 
 class Forkd(object):
+    """Pre-forking process manager.
+    """
 
     def __init__(self, worker_func, num_workers=1):
         self.worker_func = worker_func
@@ -34,14 +41,18 @@ class Forkd(object):
         self._log = logging.getLogger('forkd')
 
     def run(self):
+        """Run workers and block until no workers remain.
+        """
         self._status = 'starting'
-        self.setup()
+        self._setup()
         self._spawn_workers()
         self._status = 'running'
-        self.loop()
+        self._loop()
         self._status = 'ended'
 
-    def shutdown(self):
+    def _shutdown(self):
+        """Shutdown workers cleanly.
+        """
         # Ignore if already shutting down.
         if self._status == 'shutdown':
             return
@@ -53,7 +64,9 @@ class Forkd(object):
         for pid, worker in self._workers.iteritems():
             os.write(worker['pipe'][1], WORKER_QUIT)
 
-    def loop(self):
+    def _loop(self):
+        """Loop, handling signals, until no workers exist.
+        """
         while self._workers:
             try:
                 signal_id = os.read(self._signal_pipe[0], 1)
@@ -67,40 +80,53 @@ class Forkd(object):
                     self._log.info('OSError %x: %s', e.errno, unicode(e))
                     raise
 
-    def setup(self):
+    def _setup(self):
+        """Setup signals and master control pipe.
+        """
         self._signal_pipe = os.pipe()
         for name in SIGNAL_IDS:
             self._signal(name)
 
     def _spawn_workers(self):
+        """Spawn required number of worker processes.
+        """
         for i in range(max(self.num_workers - len(self._workers), 0)):
             pid, pipe = self._spawn_worker()
             self._workers[pid] = {'pipe': pipe}
-            self._log.info('[%s] start worker %s', os.getpid(), pid)
+            self._log.info('[%s] started worker %s', os.getpid(), pid)
 
     def _spawn_worker(self):
+        """Spawn a single worker process.
+        """
 
+        # Create worker control pipe. Read end is non-blocking so we can "peek" at it.
         worker_pipe = os.pipe()
+        fcntl.fcntl(worker_pipe[0], fcntl.F_SETFL, fcntl.fcntl(worker_pipe[0], fcntl.F_GETFL) | os.O_NONBLOCK)
 
+        # Fork process and return immediately if not new worker.
         pid = os.fork()
         if pid:
             return pid, worker_pipe
 
-        fcntl.fcntl(worker_pipe[0], fcntl.F_SETFL, fcntl.fcntl(worker_pipe[0], fcntl.F_GETFL) | os.O_NONBLOCK)
-
+        # Get worker pid.
         pid = os.getpid()
         self._log.debug('[%s] worker running', pid)
+
+        # Create worker.
         worker = self.worker_func()
+
+        # Loop until either the worker ends or is shutdown.
         while True:
             # Read byte from worker pipe, if available.
             try:
                 ch = os.read(worker_pipe[0], 1)
-                if ch == WORKER_QUIT:
-                    self._log.debug('[%s] received QUIT', pid)
-                    break
             except OSError, e:
                 if e.errno != errno.EAGAIN:
                     raise
+            else:
+                if ch == WORKER_QUIT:
+                    self._log.debug('[%s] received QUIT', pid)
+                    break
             # Run worker.
             try:
                 worker.next()
@@ -109,8 +135,24 @@ class Forkd(object):
             except Exception, e:
                 self._log.exception('[%s] exception in worker', pid)
                 sys.exit(-1)
+
+        # Exit worker process.
         self._log.debug('[%s] worker ending', pid)
         sys.exit(0)
+
+    def _add_worker(self):
+        """Add a new worker process.
+        """
+        self.num_workers += 1
+        self._log.info('[%s] adding worker, num_workers=%d', os.getpid(), self.num_workers)
+        self._spawn_workers()
+
+    def _remove_worker(self):
+        """Remove a worker process.
+        """
+        self.num_workers -= 1
+        self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
+        self._spawn_workers()
 
     def _signal(self, signame):
         """Install signal handler that routes the signal event to the pipe.
@@ -139,23 +181,25 @@ class Forkd(object):
         """Handle terminal interrupt.
         """
         self._log.debug('[%s] SIGINT', os.getpid())
-        self.shutdown()
+        self._shutdown()
 
     def _SIGTERM(self):
         """Handle termination request.
         """
         self._log.debug('[%s] SIGTERM', os.getpid())
-        self.shutdown()
+        self._shutdown()
 
     def _SIGUSR1(self):
-        self.num_workers += 1
-        self._log.info('[%s] adding worker, num_workers=%d', os.getpid(), self.num_workers)
-        self._spawn_workers()
+        """Handle usr1 (add worker) request.
+        """
+        self._log.debug('[%s] SIGUSR1', os.getpid())
+        self._add_worker()
 
     def _SIGUSR2(self):
-        self.num_workers -= 1
-        self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
-        self._spawn_workers()
+        """Handle usr2 (remove worker) request.
+        """
+        self._log.debug('[%s] SIGUSR2', os.getpid())
+        self._remove_worker()
 
 
 def main():
