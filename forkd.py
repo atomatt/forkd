@@ -9,7 +9,6 @@ import logging
 import os
 import signal
 import sys
-import time
 
 
 # Signals trapped and their single-byte identifier when sent through pipe.
@@ -221,16 +220,7 @@ class Forkd(object):
 
 
 def main():
-    def test():
-        from datetime import datetime
-        import random
-        log = logging.getLogger('test')
-        for i in range(3):
-            time.sleep(random.random()*2)
-            log.info('[%s] %s', os.getpid(), datetime.utcnow())
-            yield
-    manager = Forkd(test, num_workers=3)
-    manager.run()
+    pass
 
 
 if __name__ == '__main__':
