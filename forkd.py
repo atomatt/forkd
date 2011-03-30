@@ -220,7 +220,39 @@ class Forkd(object):
 
 
 def main():
-    pass
+
+    import argparse
+    import itertools
+
+    # Split args into forkd args and worker args.
+    argv = sys.argv[1:]
+    worker_index = len(list(itertools.takewhile(lambda x: x[0] == '-', argv))) + 1
+    forkd_args = argv[:worker_index]
+    worker_args = argv[worker_index-1:]
+
+    # Parse forkd args.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-n', '--num-workers', metavar='num_workers', type=int,
+                        default=1, help='initial number of worker processes')
+    parser.add_argument('worker', metavar='worker', type=str,
+                        help='worker spec')
+    parser.add_argument('worker_args', metavar='worker_args', type=str, nargs='*',
+                        help='worker args')
+    args = parser.parse_args(args=forkd_args)
+
+    worker = _worker_from_spec(args.worker)
+    manager = Forkd(worker, num_workers=args.num_workers)
+    sys.argv[:] = worker_args
+    manager.run()
+
+
+def _worker_from_spec(spec):
+    module_name, func_name = spec.split(':')
+    module = __import__(module_name)
+    for name in module_name.split('.')[1:]:
+        module = getattr(module, name)
+    func = getattr(module, func_name)
+    return func
 
 
 if __name__ == '__main__':

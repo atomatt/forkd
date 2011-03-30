@@ -2,24 +2,30 @@ from datetime import datetime
 import logging
 import os
 import random
+import sys
 import time
 
 from forkd import Forkd
 
 
 def worker():
+    count = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     log = logging.getLogger('worker')
-    log.info('[%s] getting going', os.getpid())
+    log.debug('[%s] getting going', os.getpid())
     try:
-        for i in range(5):
-            time.sleep(random.random()*2)
-            time.sleep(1)
+        for i in range(count):
+            time.sleep(random.SystemRandom().random()*2)
             log.info('[%s] %s', os.getpid(), datetime.utcnow())
             yield
     finally:
-        log.info('[%s] cleaning up', os.getpid())
+        log.debug('[%s] cleaning up', os.getpid())
 
 
-logging.basicConfig(level=logging.INFO)
-manager = Forkd(worker, num_workers=1)
-manager.run()
+def main():
+    logging.basicConfig(level=logging.INFO)
+    forkd = Forkd(worker, num_workers=1)
+    forkd.run()
+
+
+if __name__ == '__main__':
+    main()
