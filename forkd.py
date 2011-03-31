@@ -15,6 +15,7 @@ import sys
 SIGNAL_IDS = {
     'SIGCHLD': 'C',
     'SIGINT':  'I',
+    'SIGQUIT': 'Q',
     'SIGUSR1': '1',
     'SIGUSR2': '2',
     'SIGTERM': 'T',
@@ -162,7 +163,7 @@ class Forkd(object):
     def _remove_worker(self):
         """Remove a worker process.
         """
-        if self.num_workers == 0:
+        if self.num_workers <= 1:
             return
         self.num_workers -= 1
         self._log.info('[%s] removing worker, num_workers=%d', os.getpid(), self.num_workers)
@@ -198,6 +199,12 @@ class Forkd(object):
         """Handle terminal interrupt.
         """
         self._log.debug('[%s] SIGINT', os.getpid())
+        self._shutdown()
+
+    def _SIGQUIT(self):
+        """Handle quit interrupt.
+        """
+        self._log.debug('[%s] SIGQUIT', os.getpid())
         self._shutdown()
 
     def _SIGTERM(self):
