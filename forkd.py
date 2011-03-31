@@ -14,6 +14,7 @@ import sys
 # Signals trapped and their single-byte identifier when sent through pipe.
 SIGNAL_IDS = {
     'SIGCHLD': 'C',
+    'SIGHUP':  'H',
     'SIGINT':  'I',
     'SIGQUIT': 'Q',
     'SIGUSR1': '1',
@@ -108,6 +109,14 @@ class Forkd(object):
             self._workers[pid] = {'pipe': pipe, 'status': 'running'}
             self._log.info('[%s] started worker %s', os.getpid(), pid)
 
+    def _respawn_workers(self):
+        """Respawn all worker processes.
+        """
+        self._log.info('[%s] respawning workers', os.getpid())
+        for pid, worker in self._workers.iteritems():
+            if worker['status'] == 'running':
+                self._shutdown_worker(pid)
+
     def _spawn_worker(self):
         """Spawn a single worker process.
         """
@@ -194,6 +203,12 @@ class Forkd(object):
             os.close(worker['pipe'][0])
             os.close(worker['pipe'][1])
         self._spawn_workers()
+
+    def _SIGHUP(self):
+        """Handle HUP interrupt.
+        """
+        self._log.debug('[%s] SIGHUP', os.getpid())
+        self._respawn_workers()
 
     def _SIGINT(self):
         """Handle terminal interrupt.
