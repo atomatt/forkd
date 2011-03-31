@@ -14,16 +14,16 @@ def worker():
     log.debug('[%s] getting going', os.getpid())
     try:
         for i in range(count):
-            time.sleep(random.SystemRandom().random()*2)
             log.info('[%s] %s', os.getpid(), datetime.utcnow())
             yield
+            time.sleep(random.SystemRandom().random()*2)
     finally:
         log.debug('[%s] cleaning up', os.getpid())
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    forkd = Forkd(worker, num_workers=1)
+    forkd = Forkd('test:worker', num_workers=1)
     forkd.run()
 
 
