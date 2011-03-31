@@ -23,7 +23,7 @@ def worker():
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    forkd = Forkd('test:worker', num_workers=1)
+    forkd = Forkd(worker, num_workers=1)
     forkd.run()
 
 
