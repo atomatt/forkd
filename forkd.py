@@ -135,7 +135,7 @@ class Forkd(object):
         self._log.debug('[%s] worker running', pid)
 
         # Create worker.
-        worker = self.worker_func()
+        worker = _resolve_worker(self.worker_func)()
 
         # Loop until either the worker ends or is shutdown.
         while True:
@@ -241,6 +241,22 @@ class Forkd(object):
         self._remove_worker()
 
 
+def _resolve_worker(worker):
+    """Resolve the worker into a callable.
+    """
+
+    # If it's not a string then assume it's already callable.
+    if not isinstance(worker, basestring):
+        return worker
+
+    # Locate the callable.
+    module_name, func_name = worker.split(':')
+    module = __import__(module_name)
+    for name in module_name.split('.')[1:]:
+        module = getattr(module, name)
+    return getattr(module, func_name)
+
+
 def main():
 
     import argparse
@@ -255,19 +271,9 @@ def main():
                         help='args passed to the worker function via sys.argv')
     args = parser.parse_args()
 
-    worker = _worker_from_spec(args.worker)
-    manager = Forkd(worker, num_workers=args.num_workers)
+    manager = Forkd(args.worker, num_workers=args.num_workers)
     sys.argv[:] = [args.worker] + args.worker_args
     manager.run()
-
-
-def _worker_from_spec(spec):
-    module_name, func_name = spec.split(':')
-    module = __import__(module_name)
-    for name in module_name.split('.')[1:]:
-        module = getattr(module, name)
-    func = getattr(module, func_name)
-    return func
 
 
 if __name__ == '__main__':
