@@ -81,18 +81,25 @@ class Forkd(object):
     def _loop(self):
         """Loop, handling signals, until no workers exist.
         """
+        f = os.fdopen(self._signal_pipe[0], 'r')
         while self._workers:
             try:
-                signal_id = os.read(self._signal_pipe[0], 1)
-                if not signal_id:
+                msg = f.readline()
+                if not msg:
                     break
+                # Parse message
+                signal_id, from_pid = msg.strip().split()
+                from_pid = int(from_pid)
                 # Call signal handler.
                 handler = getattr(self, '_' + SIGNAL_IDS_REV[signal_id])
-                handler()
-            except OSError, e:
+                handler(from_pid)
+            except IOError, e:
                 if e.errno != errno.EINTR:
-                    self._log.info('OSError %x: %s', e.errno, unicode(e))
+                    self._log.info('IOError %x: %s', e.errno, unicode(e))
                     raise
+            except Exception:
+                self._log.exception('Unexpected exception in master process loop')
+                raise
 
     def _setup(self):
         """Setup signals and master control pipe.
@@ -186,10 +193,11 @@ class Forkd(object):
         """
         signal_id = SIGNAL_IDS[signame]
         def handler(signo, frame):
-            os.write(self._signal_pipe[1], signal_id)
+            self._log.debug('[%d] signal: %s', os.getpid(), signame)
+            os.write(self._signal_pipe[1], '%s %s\n' % (signal_id, os.getpid()))
         signal.signal(getattr(signal, signame), handler)
 
-    def _SIGCHLD(self):
+    def _SIGCHLD(self, from_pid):
         """Handle child termination.
         """
         self._log.debug('[%s] SIGCHLD', os.getpid())
@@ -204,41 +212,55 @@ class Forkd(object):
             os.close(worker['pipe'][1])
         self._spawn_workers()
 
-    def _SIGHUP(self):
+    def _SIGHUP(self, from_pid):
         """Handle HUP interrupt.
         """
-        self._log.debug('[%s] SIGHUP', os.getpid())
-        self._respawn_workers()
+        self._log.debug('[%s] SIGHUP from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._respawn_workers()
+        else:
+            self._shutdown_worker(from_pid)
 
-    def _SIGINT(self):
+    def _SIGINT(self, from_pid):
         """Handle terminal interrupt.
         """
-        self._log.debug('[%s] SIGINT', os.getpid())
-        self._shutdown()
+        self._log.debug('[%s] SIGINT from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._shutdown()
+        else:
+            self._shutdown_worker(from_pid)
 
-    def _SIGQUIT(self):
+    def _SIGQUIT(self, from_pid):
         """Handle quit interrupt.
         """
-        self._log.debug('[%s] SIGQUIT', os.getpid())
-        self._shutdown()
+        self._log.debug('[%s] SIGQUIT from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._shutdown()
+        else:
+            self._shutdown_worker(from_pid)
 
-    def _SIGTERM(self):
+    def _SIGTERM(self, from_pid):
         """Handle termination request.
         """
-        self._log.debug('[%s] SIGTERM', os.getpid())
-        self._shutdown()
+        self._log.debug('[%s] SIGTERM from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._shutdown()
+        else:
+            self._shutdown_worker(from_pid)
 
-    def _SIGUSR1(self):
+    def _SIGUSR1(self, from_pid):
         """Handle usr1 (add worker) request.
         """
-        self._log.debug('[%s] SIGUSR1', os.getpid())
-        self._add_worker()
+        self._log.debug('[%s] SIGUSR1 from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._add_worker()
 
-    def _SIGUSR2(self):
+    def _SIGUSR2(self, from_pid):
         """Handle usr2 (remove worker) request.
         """
-        self._log.debug('[%s] SIGUSR2', os.getpid())
-        self._remove_worker()
+        self._log.debug('[%s] SIGUSR2 from %d', os.getpid(), from_pid)
+        if from_pid == os.getpid():
+            self._remove_worker()
 
 
 def _resolve_worker(worker):
