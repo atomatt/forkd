@@ -1,0 +1,71 @@
+forkd - simple pre-forking process manager
+==========================================
+
+forkd is a Python library and command line tool to create and manage a pool of
+processes where a process is a callable that takes no args.
+
+The worker function is expected to yield control to the Forkd instance at
+convenient points, e.g. the end of completing a task. In this way, Forkd and
+the worker function cooperate to attempt a clean, controlled sutdown.
+
+Once running, the master forkd process can be used to shutdown the workers and
+to dynamically increase or decrease the number of workers. It will also restart
+any workers that exit.
+
+
+Example Usage
+-------------
+
+The following module, ping.py, can be used to demonstrate the standard ways of
+using forkd:
+
+
+    import time
+
+    def worker():
+        while True:
+            print 'ping'
+            time.sleep(1)
+            yield
+
+    if __name__ == '__main__':
+        import forkd
+        mgr = forkd.Forkd(worker)
+        mgr.run()
+
+
+Built-in command line:
+
+`python -m forkd.main --num-workers=2 ping:worker` starts two processes each
+running the worker function from the ping module.
+
+    $ python -m forkd.main --help
+    usage: main.py [-h] [-l log_level] [-n num_workers]
+                worker [worker_arg [worker_arg ...]]
+
+    positional arguments:
+    worker                worker spec, e.g. mypackage.mymodule:worker
+    worker_arg            args passed to the worker function via sys.argv
+
+    optional arguments:
+    -h, --help            show this help message and exit
+    -l log_level, --log-level log_level
+                            log level
+    -n num_workers, --num-workers num_workers
+                            initial number of worker processes
+
+
+Explicit application control:
+
+Running `python ping.py` uses the __main__ section in ping.py to explicitly
+create and run a Forkd instance. This mode allows the application to control
+startup, e.g. after parsing command line args.
+
+
+Signals
+-------
+
+SIGHUP: restart all workers when they next yield control.
+SIGUSR1: add an extra worker to the pool.
+SIGUSR2: remove a worker from the pool (when one next yields).
+SIGINT, SIGQUIT, SIGTERM: shutdown.
